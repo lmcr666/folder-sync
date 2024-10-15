@@ -110,11 +110,11 @@ Get-ChildItem -Path $ReplicaFolder | ForEach-Object {
 }
 
 # Copy files from source folder to replica folder
-# Log "Synchronizing contents from $SourceFolder to $ReplicaFolder"
-# Get-ChildItem -Path $SourceFolder | ForEach-Object {
-#   Log "Copying new file: $($_.FullName)"
-#   Copy-Item -Path $_.FullName -Destination $ReplicaFolder -Recurse
-# }
+Log "Synchronizing contents from $SourceFolder to $ReplicaFolder"
+Get-ChildItem -Path $SourceFolder | ForEach-Object {
+  Log "Copying new file: $($_.FullName)"
+  Copy-Item -Path $_.FullName -Destination $ReplicaFolder -Recurse
+}
 
 if ($Infinite) {
   Log "Running in infinite mode. Monitoring $SourceFolder for changes..."
@@ -130,41 +130,41 @@ if ($Infinite) {
   $action = {
     $changeType = $EventArgs.ChangeType
     $fullPath = $EventArgs.FullPath
-    $type = $changeType -eq [System.IO.WatcherChangeTypes]::Created
     
-    if ($type) {
-      Write-Host "Change detected: $changeType at $fullPath | $type"
-      Log "New file detected: $fullPath. Copying..."
-      # Sync-File $fullPath 
-    }
-
     # tried this with swich but not working and i dont understand why
     # events are being detected but the actions after are not being executed
+    if ($changeType -eq [System.IO.WatcherChangeTypes]::Created) {
+      Log "New file detected: $fullPath. Copying..."
+      Sync-File $fullPath 
+    }
+    elseif ($changeType -eq [System.IO.WatcherChangeTypes]::Renamed) {
+      $oldPath = $event.SourceEventArgs.OldFullPath
+      $newPath = $event.SourceEventArgs.FullPath
+      $oldReplica = $oldPath.Replace($SourceFolder, $ReplicaFolder)
+      $newReplica = $newPath.Replace($SourceFolder, $ReplicaFolder)
 
-    # if ($changeType -eq [System.IO.WatcherChangeTypes]::Created) {
-    #   Log "New file detected: $fullPath. Copying..."
-    #   Sync-File $fullPath  
-    # }
-    # elseif ($changeType -eq [System.IO.WatcherChangeTypes]::Renamed) {
-    #   $oldPath = $event.SourceEventArgs.OldFullPath
-    #   $newPath = $event.SourceEventArgs.FullPath
-    #   $oldReplica = $oldPath.Replace($SourceFolder, $ReplicaFolder)
-    #   $newReplica = $newPath.Replace($SourceFolder, $ReplicaFolder)
-    #   Log "File renamed from $oldPath to $newPath. Updating replica..."
-    #   Rename-Item -Path $oldReplica -NewName $newReplica
-    # }
-    # elseif ($changeType -eq [System.IO.WatcherChangeTypes]::Deleted) {
-    #   $targetFile = $fullPath.Replace($SourceFolder, $ReplicaFolder)
-    #   Log "File deleted: $fullPath. Removing from replica..."
-    #   Remove-File $targetFile
-    # }
-    # elseif ($changeType -eq [System.IO.WatcherChangeTypes]::Changed) {
-    #   Log "File changed: $fullPath. Updating..."
-    #   Sync-File $fullPath
-    # }
-    # else {
-    #   Log "Unknown change detected: $changeType"
-    # }
+      if (Test-Path $oldReplica) {
+        $newFileName = [System.IO.Path]::GetFileName($newReplica) # Get just the new file name
+        Log "File renamed from $oldPath to $newPath. Updating replica..."
+        Rename-Item -Path $oldReplica -NewName $newFileName
+      }
+      else {
+        Log "Old file not found in replica: $oldReplica. Unable to rename, Copying the file again."
+        Sync-File $newPath 
+      }
+    }
+    elseif ($changeType -eq [System.IO.WatcherChangeTypes]::Deleted) {
+      $targetFile = $fullPath.Replace($SourceFolder, $ReplicaFolder)
+      Log "File deleted: $fullPath. Removing from replica..."
+      Remove-File $targetFile
+    }
+    elseif ($changeType -eq [System.IO.WatcherChangeTypes]::Changed) {
+      Log "File changed: $fullPath. Updating..."
+      Sync-File $fullPath
+    }
+    else {
+      Log "Unknown change detected: $changeType"
+    }
   }
 
   # Register for events
